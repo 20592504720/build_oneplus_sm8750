@@ -5,15 +5,6 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      ksu_type:
-        description: "📝请选择要集成的KSU"
-        required: true
-        type: choice
-        options:
-          - 'ReSukiSU'
-          - 'SukiSU-Ultra'
-        default: 'ReSukiSU'
-        
       kernel_version:
         description: "📝请选择要编译的内核版本"
         required: true
@@ -67,11 +58,10 @@ on:
 
 jobs:
   build:
-    name: Build_${{ github.event.inputs.kernel_version }}_${{ github.event.inputs.ksu_type }}
+    name: Build_${{ github.event.inputs.kernel_version }}
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      KSU_TYPE:               ${{ github.event.inputs.ksu_type }}
       KERNEL_VERSION:           ${{ github.event.inputs.kernel_version }}
       CUSTOM_KERNEL_SUFFIX:   ${{ github.event.inputs.custom_kernel_suffix }}
       CUSTOM_KERNEL_TIME:     ${{ github.event.inputs.custom_kernel_time }}
@@ -219,7 +209,7 @@ jobs:
 
       - name: 🛠 Set ccache DIR(配置ccache目录)
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache_${{ env.KSU_TYPE }}_${{ env.KERNEL_VERSION }}" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
           echo "当前磁盘空间："
           df -h
@@ -230,9 +220,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-ECS-${{ env.KSU_TYPE }}-${{ env.KERNEL_VERSION }}-latest
+          key: ccache-ECS-${{ env.KERNEL_VERSION }}-latest
           restore-keys: |
-            ccache-ECS-${{ env.KSU_TYPE }}-${{ env.KERNEL_VERSION }}-
+            ccache-ECS-${{ env.KERNEL_VERSION }}-
 
       - name: 🔎 Find public ccache in releases (查找公共缓存)
         id: public-ccache
@@ -447,48 +437,15 @@ jobs:
 
       
       
-      - name: ⚙️ Set ${{ env.KSU_TYPE }} (设置${{ env.KSU_TYPE }})
+      - name: ⚙️ Set ReSukiSU (设置 ReSukiSU)
         run: |
           cd kernel_workspace
-          echo "正在配置${{ env.KSU_TYPE }}..."
-          if [ "${{ env.KSU_TYPE }}" == 'ReSukiSU' ]; then
-            curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/refs/heads/main/kernel/setup.sh" | bash -s main
-            cd ./KernelSU 
-            KSU_VERSION=$(expr $(git rev-list --count main) + 30700 2>/dev/null || echo 114514)
-            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-            echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
-          else
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | bash -s builtin
-            cd ./KernelSU
-            GIT_COMMIT_HASH=$(git rev-parse --short=8 HEAD)
-            echo "当前提交哈希: $GIT_COMMIT_HASH"
-            export KSU_VERSION=$KSU_VERSION
-            for i in {1..3}; do
-              KSU_API_VERSION=$(curl -s "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/Makefile" | 
-                grep -m1 "KSU_VERSION_API :=" | 
-                awk -F'= ' '{print $2}' | 
-                tr -d '[:space:]')
-              [ -n "$KSU_API_VERSION" ] && break || sleep 1
-            done
-            [ -z "$KSU_API_VERSION" ] && KSU_API_VERSION="4.1.0"
-            echo "KSU_API_VERSION=$KSU_API_VERSION" >> $GITHUB_ENV
-            VERSION_DEFINITIONS=$'define get_ksu_version_full\nv\\$1-'"$GIT_COMMIT_HASH"$'-TG@qdykernel\nendef\n\nKSU_VERSION_API := '"$KSU_API_VERSION"$'\nKSU_VERSION_FULL := v'"$KSU_API_VERSION"$'-'"$GIT_COMMIT_HASH"$'-TG@qdykernel'
-            
-            sed -i '/define get_ksu_version_full/,/endef/d' kernel/Makefile
-            sed -i '/KSU_VERSION_API :=/d' kernel/Makefile
-            sed -i '/KSU_VERSION_FULL :=/d' kernel/Makefile
-            awk -v def="$VERSION_DEFINITIONS" '
-              /REPO_OWNER :=/ {print; print def; inserted=1; next}
-              1
-              END {if (!inserted) print def}
-            ' kernel/Makefile > kernel/Makefile.tmp && mv kernel/Makefile.tmp kernel/Makefile
-            KSU_VERSION=$(expr $(git rev-list --count main) + 37185 2>/dev/null || echo 114514)
-            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-            echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
-            grep -A10 "REPO_OWNER" kernel/Makefile
-            grep "KSU_VERSION_FULL" kernel/Makefile
-            echo "SukiSU版本号: v${KSU_API_VERSION}-${GIT_COMMIT_HASH}-TG@qdykernel"
-          fi
+          echo "正在配置 ReSukiSU..."
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          cd ./KernelSU 
+          KSU_VERSION=$(expr $(git rev-list --count main) + 30700 2>/dev/null || echo 114514)
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
 
             
       - name: 🔧 Set up SUSFS (配置 SUSFS)
@@ -512,9 +469,7 @@ jobs:
           echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KPM=y" >> ./common/arch/arm64/configs/gki_defconfig
           
-          if [ "${{ env.KSU_TYPE }}" == 'ReSukiSU' ]; then
-            echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%-Re-TG@qdykernel"' >> ./common/arch/arm64/configs/gki_defconfig
-          fi
+          echo 'CONFIG_KSU_FULL_NAME_FORMAT="%TAG_NAME%-%COMMIT_SHA%-Re-TG@qdykernel"' >> ./common/arch/arm64/configs/gki_defconfig
           
           if [ "${{ env.ENABLE_SUSFS }}" == 'true' ];then
             echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
